@@ -1,54 +1,83 @@
-# This workflow uses actions that are not certified by GitHub. They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support documentation.
-#
-# Appknox: Leader in Mobile Application Security Testing Solutions <https://www.appknox.com/>
-#
-# To use this workflow, you must be an existing Appknox customer with GitHub Advanced Security (GHAS) enabled for your
-# repository.
-#
-# If you *are not* an existing customer, click here to contact us for licensing and pricing details:
-# <https://www.appknox.com/free-trial>.
-#
-# Instructions:
-#
-# 1. In your repository settings, navigate to 'Secrets' and click on 'New repository secret.' Name the
-#    secret APPKNOX_ACCESS_TOKEN and paste your appknox user token into the value field. If you don't have a appknox token
-#    or need to generate a new one for GitHub, visit the Appknox Platform, go to Account Settings->Developer Settings
-#    and create a token labeled GitHub
-#
-# 2. Refer to the detailed workflow below, make any required adjustments, and then save it to your repository. After the
-#    action executes, check the 'Security' tab for results
-
-name: Appknox
+name: Build Android APK
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
-  appknox:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build the app
-        run: ./gradlew build                                         # Update this to build your Android or iOS application
-
-      - name: Appknox GitHub action
-        uses: appknox/appknox-github-action@b7d2bfb2321d5544e97bffcba48557234ab953a4
+      - name: Arrange project folders
+        run: |
+          mkdir -p app/src/main/java/com/motionstudio/app app/src/main/assets
+          mv -f MainActivity.kt app/src/main/java/com/motionstudio/app/ 2>/dev/null || true
+          mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
+          mv -f index.html app/src/main/assets/ 2>/dev/null || true
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.motionstudio.app"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.motionstudio.app"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          dependencies {
+              implementation("androidx.webkit:webkit:1.11.0")
+              implementation("androidx.activity:activity-ktx:1.9.0")
+          }
+          EOF
+          echo "--- project files ---"
+          find app -type f
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          appknox_access_token: ${{ secrets.APPKNOX_ACCESS_TOKEN }}
-          file_path: app/build/outputs/apk/debug/app-debug.apk        # Specify the path to your .ipa or .apk here
-          risk_threshold: MEDIUM                                      # Update this to desired risk threshold [LOW, MEDIUM, HIGH, CRITICAL]
-          sarif: Enable
+          distribution: temurin
+          java-version: '17'
 
-      - name: Upload SARIF to GHAS
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
         with:
-          sarif_file: report.sarif
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon -x test
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotionStudio-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Motion Studio build ${{ github.run_number }}
+          files: app/build/outputs/apk/debug/app-debug.apk

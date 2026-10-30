@@ -21,7 +21,27 @@ jobs:
           mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
           mv -f index.html app/src/main/assets/ 2>/dev/null || true
           
-          # settings.gradle.kts ফাইল তৈরি করা হচ্ছে যাতে app মডিউলটি পায়
+          # ১. রুট build.gradle.kts ফাইল তৈরি
+          cat > build.gradle.kts <<'EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath("com.android.tools.build:gradle:8.2.2")
+                  classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20")
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          # ২. settings.gradle.kts ফাইল তৈরি
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
               repositories {
@@ -30,10 +50,18 @@ jobs:
                   gradlePluginPortal()
               }
           }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
           rootProject.name = "MotionV.0.1"
           include(":app")
           EOF
 
+          # ৩. app/build.gradle.kts ফাইল তৈরি
           cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
@@ -48,6 +76,7 @@ jobs:
                   targetSdk = 34
                   versionCode = 1
                   versionName = "1.0"
+                  testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
               }
               buildTypes {
                   release {
@@ -63,22 +92,27 @@ jobs:
               }
           }
           dependencies {
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.appcompat:appcompat:1.6.1")
+              implementation("com.google.android.material:material:1.11.0")
               implementation("androidx.webkit:webkit:1.11.0")
               implementation("androidx.activity:activity-ktx:1.9.0")
           }
           EOF
-          echo "--- project files ---"
+          
+          echo "--- project files checked ---"
           find . -maxdepth 3 -type f
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.7
+      - name: Set up Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.5'
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon -x test
